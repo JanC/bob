@@ -31,6 +31,9 @@ public class BumpCommand {
     fileprivate let message: String
     fileprivate let author: Author
 
+    private let appVersionProvider: AppVersionProvider
+
+
     /// Source of the version we will bump
     fileprivate var versionPlist: String {
         return self.plistPaths[0]
@@ -47,13 +50,7 @@ public class BumpCommand {
         self.plistPaths = plistPaths
         self.message = message
         self.author = author
-    }
-
-    private func fetchVersion(plistFile: TreeItem) throws -> Future<Version> {
-        return try gitHub.gitBlob(sha: plistFile.sha).map(to: Version.self) { blob in
-            guard let content = blob.string else { throw "Could not convert plist file content to String" }
-            return try Version(fromPlistContent: content)
-        }
+        self.appVersionProvider = GithubAppVersionProvider(gitHub: gitHub, configuration: GithubAppVersionProvider.Configutation(versionPlistPath: plistPaths[0]))
     }
 }
 
@@ -85,11 +82,7 @@ extension BumpCommand: Command {
 
         sender.send("One sec...")
 
-        _ = try gitHub.currentState(on: branch).map(to: TreeItem.self) { currentState in
-            return try currentState.items.firstItem(named: self.versionPlist)
-        }.flatMap { treeItem in
-            return try self.fetchVersion(plistFile: treeItem)
-        }.flatMap(to: GitHub.Git.Reference.self) { version in
+        _ = try self.appVersionProvider.fetchVersion(on: branch).flatMap(to: GitHub.Git.Reference.self) { version in
             let bumpedVersion = try version.bump()
             let align = VersionUpdater(plistPaths: self.plistPaths, version: bumpedVersion)
             let message = version.commitMessage(template: self.message)
