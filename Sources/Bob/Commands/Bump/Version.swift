@@ -19,8 +19,8 @@
 
 import Foundation
 
-struct Version {
-    struct Build {
+public struct Version {
+    public struct Build {
         public let value: String
         public init(_ value: String) {
             self.value = value
@@ -41,8 +41,8 @@ struct Version {
         }
     }
 
-    let version: String
-    let build: Build
+    public let version: String
+    public let build: Build
 
     init(fromPlistContent content: String) throws {
         let (version, build) = try PListHelpers.version(fromPlistContent: content)
@@ -65,7 +65,7 @@ struct Version {
     }
 
     /// version + build number
-    var fullVersion: String {
+    public var fullVersion: String {
         return "\(version) (\(build.value))"
     }
     /// Commit message using the version and build number
