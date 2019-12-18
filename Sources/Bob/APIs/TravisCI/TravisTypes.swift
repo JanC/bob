@@ -94,12 +94,15 @@ public extension TravisCI {
     /// https://developer.travis-ci.com/resource/build#Build
     struct Build: Content {
         public typealias ID = Int
+        public typealias Number = String
         public let href: String
         public let id: ID
+        public let number: Number
 
         enum CodingKeys: String, CodingKey {
             case href = "@href"
             case id
+            case number
         }
     }
 
