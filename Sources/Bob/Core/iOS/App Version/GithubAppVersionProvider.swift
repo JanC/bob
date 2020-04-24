@@ -8,7 +8,7 @@
 import Foundation
 import Vapor
 
-public class GithubAppVersionProvider: AppVersionProvider {
+public class GithubFileAppVersionProvider: AppVersionProvider {
 
     public struct Configutation {
         /// The path of the plist path to look for the app version

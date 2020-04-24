@@ -20,6 +20,7 @@
 import Foundation
 import Vapor
 
+/// Script old target
 /// Struct used to map targets to scripts
 public struct TravisTarget {
     /// Name used in the command parameters
@@ -42,6 +43,7 @@ public class TravisScriptCommand {
     fileprivate let targets: [TravisTarget]
     fileprivate let defaultBranch: BranchName
     fileprivate let gitHub: GitHub?
+    private let appVersionProvider: AppVersionProvider
     
     /// Initializer for the command
     ///
@@ -50,12 +52,13 @@ public class TravisScriptCommand {
     ///   - travis: TravisCI instance
     ///   - targets: Array of possible targets the user can use
     ///   - gitHub: If GitHub config is provided, the command will perform a branch check before invoking TravisCI api
-    public init(name: String, travis: TravisCI, targets: [TravisTarget], defaultBranch: BranchName, gitHub: GitHub? = nil) {
+    public init(name: String, travis: TravisCI, targets: [TravisTarget], defaultBranch: BranchName, gitHub: GitHub? = nil, appVersionProvider: AppVersionProvider) {
         self.name = name
         self.travis = travis
         self.targets = targets
         self.defaultBranch = defaultBranch
         self.gitHub = gitHub
+        self.appVersionProvider = appVersionProvider
     }
 }
 
@@ -109,17 +112,10 @@ extension TravisScriptCommand: Command {
             sender.send("Got it! Executing target *" + target.name + "* success.")
             return try self.travis.request(id: response.request.id)
         }.flatMap { buildRequest in
-            return try self.travis.poll(requestId: buildRequest.id, until: { request -> TravisCI.Poll<TravisCI.Request.Complete> in
-                switch request.state {
-                case .pending:
-                    return .continue
-                case .complete(let completedRequest):
-                    return .stop(completedRequest)
-                }
-            })
-        }.map { completedRequest in
-            let urls = completedRequest.builds.map { self.travis.buildURL(from: $0) }
-            let message = urls.reduce("Build URL: ") { $0 + "\n \($1.absoluteString)" }
+            try self.pollTravisForBuild(buildRequest: buildRequest)
+        }.flatMap { completedRequest in
+            return try self.createBuildUrlsMessage(fromCompletedRequest: completedRequest)
+        }.map { message in
             sender.send(message)
         }
         .catch { error in
@@ -127,6 +123,45 @@ extension TravisScriptCommand: Command {
         }
     }
 
+    /// Polls the travis build until it's out of the "loading" state in order to get the travis build id
+    private func pollTravisForBuild(buildRequest: TravisCI.Request) throws -> Future<TravisCI.Request.Complete> {
+        return try self.travis.poll(requestId: buildRequest.id, until: { request -> TravisCI.Poll<TravisCI.Request.Complete> in
+            switch request.state {
+            case .pending:
+                return .continue
+            case .complete(let completedRequest):
+                return .stop(completedRequest)
+            }
+        })
+    }
+
+    /**
+     Creates the started build url message + app version ready to be posted as it is to Slack
+
+     The message is in a form of
+     ```
+     1.01 (20195045): https://travis-ci.org/foo/bar/builds/travis-build-id
+     ```
+
+     */
+    private func createBuildUrlsMessage(fromCompletedRequest completedRequest: TravisCI.Request.Complete) throws -> Future<String> {
+        return try self.appVersionProvider.fetchVersion(on: completedRequest.branchName).map { version in
+            let buildNumbersUrls: [(version: String, url: URL)] = completedRequest.builds.map { build in
+                let travisVersion = version.fullVersion
+                let url = self.travis.buildURL(from: build)
+                return (version: travisVersion, url: url)
+            }
+
+            let message = buildNumbersUrls.reduce("Build URL: ") { $0 + "\n `\($1.version): \($1.url.absoluteString)`" }
+            return message
+
+        }.catchMap { error in
+            // fallback message without the version number
+            let urls = completedRequest.builds.map { self.travis.buildURL(from: $0) }
+            let message = urls.reduce("Build URL: ") { $0 + "\n \($1.absoluteString)" }
+            return message
+        }
+    }
     private func assertGitHubBranchIfPossible(_ branch: BranchName) throws -> Future<Void> {
         guard let gitHub = self.gitHub else {
             return travis.worker.future()

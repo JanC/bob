@@ -50,7 +50,7 @@ public class BumpCommand {
         self.plistPaths = plistPaths
         self.message = message
         self.author = author
-        self.appVersionProvider = GithubAppVersionProvider(gitHub: gitHub, configuration: GithubAppVersionProvider.Configutation(versionPlistPath: plistPaths[0]))
+        self.appVersionProvider = GithubFileAppVersionProvider(gitHub: gitHub, configuration: GithubFileAppVersionProvider.Configutation(versionPlistPath: plistPaths[0]))
     }
 }
 
